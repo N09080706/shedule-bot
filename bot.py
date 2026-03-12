@@ -1,16 +1,15 @@
 import json
-import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
-TOKEN = "YOUR_BOT_TOKEN"
+import os
 
-bot = Bot(token=TOKEN)
+TOKEN = os.getenv("BOT_TOKEN")
 
 SCHEDULE_FILE = "schedule.json"
 CHATS_FILE = "chats.json"
@@ -46,7 +45,6 @@ def load_schedule():
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
-
     chats = load_chats()
 
     if chat_id not in chats:
@@ -56,12 +54,11 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Бот подключен к расписанию")
 
 
-async def send_schedule():
+async def send_schedule(context: ContextTypes.DEFAULT_TYPE):
 
     schedule = load_schedule()
 
     now = datetime.now(ZoneInfo("Asia/Dushanbe"))
-
     day = now.strftime("%A")
 
     if day == "Sunday":
@@ -82,57 +79,32 @@ async def send_schedule():
     chats = load_chats()
 
     for chat in chats:
-
         try:
-            await bot.send_message(chat, text)
+            await context.bot.send_message(chat, text)
         except:
             pass
 
 
-async def broadcast(text):
-
-    chats = load_chats()
-
-    for chat in chats:
-
-        try:
-            await bot.send_message(chat, text)
-        except:
-            pass
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await register(update, context)
-
-
-async def message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await register(update, context)
-
-
-def start_scheduler():
-
-    scheduler = AsyncIOScheduler(timezone="Asia/Dushanbe")
-
-    scheduler.add_job(send_schedule, "cron", hour=6, minute=0)
-
-    scheduler.start()
-
-
-async def main():
+def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.ALL, message))
+    app.add_handler(MessageHandler(filters.ALL, register))
 
-    start_scheduler()
+    # планировщик
+    scheduler = BackgroundScheduler(timezone="Asia/Dushanbe")
+    scheduler.add_job(
+        lambda: app.create_task(send_schedule(app.bot)),
+        "cron",
+        hour=6,
+        minute=0
+    )
+    scheduler.start()
 
     print("Bot started")
 
-    await app.run_polling()
+    app.run_polling()
 
 
 if __name__ == "__main__":
-
-    asyncio.run(main())
+    main()
